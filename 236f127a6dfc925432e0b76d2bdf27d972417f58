@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "1e3c2bd3_ca90f347",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 4
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1001013
+      },
+      "writtenOn": "2026-01-06T06:15:33Z",
+      "side": 1,
+      "message": "Check ran and succeeded, but did not add verified vote: https://github.com/opencord/shared-workflows/actions/runs/20739930328",
+      "revId": "236f127a6dfc925432e0b76d2bdf27d972417f58",
+      "serverId": "2a2bfe1b-c5c2-48ed-9ac8-16438ab24388"
+    }
+  ]
+}
