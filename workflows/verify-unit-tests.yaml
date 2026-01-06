@@ -1,0 +1,105 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+name: Gerrit Verify - Unit Tests
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      # Gerrit-to-Github defaults
+      GERRIT_BRANCH:
+        description: "Branch that change is against"
+        required: true
+        type: string
+      GERRIT_CHANGE_ID:
+        description: "The ID for the change"
+        required: true
+        type: string
+      GERRIT_CHANGE_NUMBER:
+        description: "The Gerrit number"
+        required: true
+        type: string
+      GERRIT_CHANGE_URL:
+        description: "URL to the change"
+        required: true
+        type: string
+      GERRIT_EVENT_TYPE:
+        description: "Type of Gerrit event"
+        required: true
+        type: string
+      GERRIT_PATCHSET_NUMBER:
+        description: "The patch number for the change"
+        required: true
+        type: string
+      GERRIT_PATCHSET_REVISION:
+        description: "The revision sha"
+        required: true
+        type: string
+      GERRIT_PROJECT:
+        description: "Project in Gerrit"
+        required: true
+        type: string
+      GERRIT_REFSPEC:
+        description: "Gerrit refspec of change"
+        required: true
+        type: string
+      # Workflow-specific inputs
+      UNIT_TEST_TARGETS:
+        description: "List of targets in json-formatted string"
+        required: false
+        type: string
+        default: '["lint", "sca", "test"]'
+      DEST_GOPATH:
+        description: "Specifies part of the GOPATH. Usually set to Github org."
+        required: false
+        type: string
+        default: "github.com/opencord"
+      GOPROXY:
+        description: "Url for Go proxy"
+        required: false
+        type: string
+        default: "https://proxy.golang.org"
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: verify-unit-tests-${{ github.workflow }}-${{ github.event.inputs.GERRIT_CHANGE_ID || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJSON(inputs.UNIT_TEST_TARGETS) }}
+    steps:
+      - name: Gerrit Checkout
+        # yamllint disable-line rule:line-length
+        uses: lfit/checkout-gerrit-change-action@54d751e8bd167bc91f7d665dabe33fae87aaaa63 # v0.9
+        with:
+          gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
+          gerrit-project: ${{ inputs.GERRIT_PROJECT }}
+          gerrit-url: ${{ vars.GERRIT_URL }}
+          delay: "0s"
+          submodules: "true"
+          fetch-depth: 0
+      # yamllint disable-line rule:line-length
+      - name: Install python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.10"
+      - name: Install virtualenv
+        run: pip install virtualenv
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run unit tests
+        env:
+          DEST_GOPATH: ${{ inputs.DEST_GOPATH }}
+          UNIT_TEST_TARGETS: ${{ matrix.target }}
+          GOPROXY: ${{ inputs.GOPROXY }}
+          TEST_PROJECT: ${{ github.repository }}
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          make SHELL="/bin/bash" ${{ matrix.target }}
