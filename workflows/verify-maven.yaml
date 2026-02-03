@@ -54,7 +54,7 @@ on:
         description: "Maven version"
         required: false
         default: "3.8.2"
-        type: stringssh://eball@gerrit.lfbroadband.org:29418/shared-workflows
+        type: string
       MVN_PARAMS:
         description: "Maven parameters to pass to the mvn command"
         required: false
