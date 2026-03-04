@@ -1,6 +1,6 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2023 The Linux Foundation
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 name: "license-check"
 description: "Check for standard license/copyright header"
@@ -8,7 +8,7 @@ description: "Check for standard license/copyright header"
 runs:
   using: "composite"
   steps:
-    - id: Installing dependencies
+    - id: Check licenses
       shell: bash
       run: |
         set +e -u -o pipefail
