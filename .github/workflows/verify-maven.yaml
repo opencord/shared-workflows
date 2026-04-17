@@ -88,7 +88,6 @@ on:
       MVN_GLOBAL_SETTINGS:
         description: "Maven global settings configuration."
         required: false
-        default: ${{ vars.GLOBAL_SETTINGS }}
         type: string
       ENV_VARS:
         # yamllint disable-line rule:line-length
