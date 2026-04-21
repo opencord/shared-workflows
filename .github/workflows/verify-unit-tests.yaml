@@ -118,7 +118,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Check License Headers
-        uses: ./.github/actions/license-check-action
+        uses: opencord/shared-workflows/.github/actions/license-check-action
       - name: Run unit tests
         env:
           DEST_GOPATH: ${{ inputs.DEST_GOPATH }}
