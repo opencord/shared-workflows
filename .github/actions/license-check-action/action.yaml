@@ -8,7 +8,7 @@ description: "Check for standard license/copyright header"
 runs:
   using: "composite"
   steps:
-    - id: Check licenses
+    - id: check-licenses
       shell: bash
       run: |
         set +e -u -o pipefail
