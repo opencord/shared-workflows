@@ -49,6 +49,10 @@ on:
         required: false
         type: string
         default: "false"
+    secrets:
+      GERRIT_SSH_PRIVKEY:
+        description: "SSH Key for the authorized user account"
+        required: true
 
 concurrency:
   # yamllint disable-line rule:line-length
