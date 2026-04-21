@@ -6,7 +6,7 @@ name: Lint GitHub Actions workflows
 
 # yamllint disable-line rule:truthy
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       # Gerrit-to-Github defaults
       GERRIT_BRANCH:
