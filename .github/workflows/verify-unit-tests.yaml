@@ -114,7 +114,7 @@ jobs:
       - name: Install virtualenv
         run: pip install virtualenv
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Check License Headers
