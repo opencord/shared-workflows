@@ -98,7 +98,7 @@ jobs:
     steps:
       - name: Gerrit Checkout
         # yamllint disable-line rule:line-length
-        uses: lfit/checkout-gerrit-change-action@fc57a3dd3318f31bd34d435d134e30443593eb80 # v1.0.1
+        uses: lfit/checkout-gerrit-change-action@b23ca4705c51c85c7f575effd6f0854229e3bc97 # v1.0.1
         with:
           gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
           gerrit-project: ${{ inputs.GERRIT_PROJECT }}
