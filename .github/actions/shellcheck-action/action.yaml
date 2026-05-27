@@ -1,0 +1,85 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+name: ShellCheck Lint
+description: "Lint shell scripts with ShellCheck"
+
+inputs:
+  path:
+    description: "Path to search for shell scripts"
+    required: false
+    default: "."
+  severity:
+    description: "Minimum severity level (error, warning, info, style)"
+    required: false
+    default: "style"
+  exclude:
+    description: "Comma-separated list of ShellCheck codes to exclude (e.g., SC1090,SC2034)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install ShellCheck
+      shell: bash
+      run: |
+        if ! command -v shellcheck &> /dev/null; then
+          echo "Installing ShellCheck..."
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+        fi
+        echo "ShellCheck version:"
+        shellcheck --version
+
+    - name: Run ShellCheck
+      shell: bash
+      run: |
+        set +e
+        fail_shellcheck=0
+        files_checked=0
+
+        echo "=> Linting shell scripts with ShellCheck"
+        echo "   Path: ${{ inputs.path }}"
+        echo "   Severity: ${{ inputs.severity }}"
+
+        # Build exclude argument if provided
+        exclude_arg=""
+        if [[ -n "${{ inputs.exclude }}" ]]; then
+          exclude_arg="--exclude=${{ inputs.exclude }}"
+          echo "   Excluding: ${{ inputs.exclude }}"
+        fi
+
+        # Find and check all shell scripts
+        while IFS= read -r -d '' script; do
+          echo ""
+          echo "==> CHECKING: ${script}"
+          files_checked=$((files_checked + 1))
+
+          if [[ -n "${exclude_arg}" ]]; then
+            shellcheck --severity="${{ inputs.severity }}" "${exclude_arg}" "${script}"
+          else
+            shellcheck --severity="${{ inputs.severity }}" "${script}"
+          fi
+
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            echo "==> FAILED: ${script}"
+            fail_shellcheck=1
+          else
+            echo "==> PASSED: ${script}"
+          fi
+        done < <(find "${{ inputs.path }}" \( -name "*.sh" -o -name "*.bash" \) -type f -print0)
+
+        echo ""
+        echo "=> Summary: ${files_checked} file(s) checked"
+
+        if [[ ${files_checked} -eq 0 ]]; then
+          echo "=> No shell scripts found"
+        elif [[ ${fail_shellcheck} -eq 0 ]]; then
+          echo "=> All checks passed"
+        else
+          echo "=> Some checks failed"
+          exit 1
+        fi
