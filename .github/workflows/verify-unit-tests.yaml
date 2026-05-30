@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
 name: Gerrit Verify - Unit Tests
+# Requires a go.mod file to be present in the repo
 
 # yamllint disable-line rule:truthy
 on:

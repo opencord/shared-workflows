@@ -1,7 +1,8 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
-name: Gerrit Verify - Unit Tests
+name: Gerrit Verify - Unit Tests and Tag Check
+# This workflow does not support Go builds
 
 # yamllint disable-line rule:truthy
 on:
@@ -67,7 +68,7 @@ on:
 
 concurrency:
   # yamllint disable-line rule:line-length
-  group: verify-unit-tests-${{ github.workflow }}-${{ github.event.inputs.GERRIT_CHANGE_ID || github.run_id }}
+  group: verify-unit-tests-tag-${{ github.workflow }}-${{ github.event.inputs.GERRIT_CHANGE_ID || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -98,7 +99,7 @@ jobs:
     steps:
       - name: Gerrit Checkout
         # yamllint disable-line rule:line-length
-        uses: lfit/checkout-gerrit-change-action@fc57a3dd3318f31bd34d435d134e30443593eb80 # v1.0.1
+        uses: lfreleng-actions/checkout-gerrit-change-action@8523d768952d9690702b4696a8310d2a84b1be39 # v1.0.1
         with:
           gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
           gerrit-project: ${{ inputs.GERRIT_PROJECT }}
@@ -113,10 +114,6 @@ jobs:
           python-version: "3.10"
       - name: Install virtualenv
         run: pip install virtualenv
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
       - name: Run unit tests
         env:
           DEST_GOPATH: ${{ inputs.DEST_GOPATH }}
@@ -133,7 +130,7 @@ jobs:
     steps:
       - name: Gerrit Checkout
         # yamllint disable-line rule:line-length
-        uses: lfit/checkout-gerrit-change-action@fc57a3dd3318f31bd34d435d134e30443593eb80 # v1.0.1
+        uses: lfreleng-actions/checkout-gerrit-change-action@8523d768952d9690702b4696a8310d2a84b1be39 # v1.0.1
         with:
           gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
           gerrit-project: ${{ inputs.GERRIT_PROJECT }}
@@ -149,7 +146,7 @@ jobs:
   vote:
     if: ${{ always() }}
     # yamllint enable rule:line-length
-    needs: [prepare, unit-tests]
+    needs: [prepare, unit-tests, license-and-tag-check]
     runs-on: ubuntu-latest
     steps:
       - name: Get conclusion
