@@ -1,0 +1,96 @@
+---
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+name: Maven Publish
+description: "Build and publish Maven (Java) artifacts to a remote repository"
+
+inputs:
+  java-version:
+    description: "Java version to use"
+    required: false
+    default: "11"
+  java-distribution:
+    description: "Java distribution"
+    required: false
+    default: "temurin"
+  maven-goals:
+    description: "Maven goals to execute"
+    required: false
+    default: "-Prelease clean deploy"
+  maven-settings-file:
+    description: "Path to custom Maven settings.xml"
+    required: false
+    default: ""
+  gpg-private-key:
+    description: "GPG private key for signing"
+    required: false
+    default: ""
+  gpg-passphrase:
+    description: "GPG passphrase"
+    required: false
+    default: ""
+  server-id:
+    description: "Maven server ID for deployment"
+    required: false
+    default: "ossrh"
+  server-username:
+    description: "Maven server username"
+    required: true
+  server-password:
+    description: "Maven server password"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: ${{ inputs.java-distribution }}
+        java-version: ${{ inputs.java-version }}
+        server-id: ${{ inputs.server-id }}
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
+        settings-path: ${{ github.workspace }}
+
+    - name: Import GPG key
+      if: inputs.gpg-private-key != ''
+      shell: bash
+      env:
+        GPG_PRIVATE_KEY: ${{ inputs.gpg-private-key }}
+        GPG_PASSPHRASE: ${{ inputs.gpg-passphrase }}
+      run: |
+        set -eu -o pipefail
+        echo "Importing GPG private key..."
+        echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+        echo "GPG key imported successfully"
+        if [ -n "$GPG_PASSPHRASE" ]; then
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+          gpgconf --launch gpg-agent
+        fi
+
+    - name: Apply custom Maven settings
+      if: inputs.maven-settings-file != ''
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        echo "Using custom Maven settings: ${{ inputs.maven-settings-file }}"
+        cp "${{ inputs.maven-settings-file }}" "${{ github.workspace }}/settings.xml"
+
+    - name: Run Maven
+      shell: bash
+      env:
+        MAVEN_USERNAME: ${{ inputs.server-username }}
+        MAVEN_PASSWORD: ${{ inputs.server-password }}
+        GPG_PASSPHRASE: ${{ inputs.gpg-passphrase }}
+      run: |
+        set -eu -o pipefail
+        MAVEN_ARGS=(-s "${{ github.workspace }}/settings.xml")
+        if [ -n "$GPG_PASSPHRASE" ]; then
+          MAVEN_ARGS+=(-Dgpg.passphrase="$GPG_PASSPHRASE")
+        fi
+        read -r -a MAVEN_GOALS <<< "${{ inputs.maven-goals }}"
+        echo "Running: mvn ${MAVEN_ARGS[*]} ${MAVEN_GOALS[*]}"
+        mvn "${MAVEN_ARGS[@]}" "${MAVEN_GOALS[@]}"
