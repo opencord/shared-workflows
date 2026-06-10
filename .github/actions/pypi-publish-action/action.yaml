@@ -1,0 +1,91 @@
+---
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+name: PyPI Publish
+description: "Build and publish Python packages to PyPI on SemVer release tags"
+
+inputs:
+  pypi-index:
+    description: "PyPI repository name to publish to"
+    required: false
+    default: "pypi"
+  pypi-username:
+    description: "PyPI username"
+    required: true
+  pypi-password:
+    description: "PyPI password or API token"
+    required: true
+  module-dirs:
+    description: "Pipe-separated list of directories containing Python modules to publish"
+    required: false
+    default: "."
+  prep-commands:
+    description: "Commands to run before building"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get and verify SemVer release tag
+      id: tag-check
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        TAG=$(git tag --points-at HEAD | head -n1 || true)
+        if [ -z "$TAG" ]; then
+          echo "No git tag on HEAD, skipping publish"
+          echo "is-release=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # Match vX.Y.Z or X.Y.Z (SemVer release, no pre-release suffix)
+        if [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Found SemVer release tag: $TAG"
+          echo "is-release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        else
+          echo "Tag '$TAG' is not a SemVer release version, skipping publish"
+          echo "is-release=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run prep commands
+      if: steps.tag-check.outputs.is-release == 'true' && inputs.prep-commands != ''
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        echo "Running prep commands..."
+        ${{ inputs.prep-commands }}
+
+    - name: Build and publish packages
+      if: steps.tag-check.outputs.is-release == 'true'
+      shell: bash
+      env:
+        TWINE_USERNAME: ${{ inputs.pypi-username }}
+        TWINE_PASSWORD: ${{ inputs.pypi-password }}
+      run: |
+        set -eu -o pipefail
+
+        echo "Installing build dependencies..."
+        pip install --upgrade pip setuptools wheel twine build
+
+        IFS='|' read -ra DIRS <<< "${{ inputs.module-dirs }}"
+        for dir in "${DIRS[@]}"; do
+          dir=$(echo "$dir" | xargs)  # trim whitespace
+          echo "::group::Publishing module in: $dir"
+
+          if [ ! -f "$dir/setup.py" ]; then
+            echo "ERROR: setup.py not found in $dir"
+            exit 1
+          fi
+
+          echo "Building source distribution..."
+          cd "$dir"
+          python3 -m build
+
+          echo "Uploading to PyPI repository: ${{ inputs.pypi-index }}"
+          twine upload -r "${{ inputs.pypi-index }}" dist/*
+
+          cd "$GITHUB_WORKSPACE"
+          echo "::endgroup::"
+        done
