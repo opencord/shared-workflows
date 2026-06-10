@@ -1,0 +1,142 @@
+---
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+name: Docker Publish
+description: "Build and push Docker images tagged with branch name and git tags"
+
+inputs:
+  docker-registry:
+    description: "Docker registry URL"
+    required: false
+    default: "docker.io"
+  docker-repository:
+    description: "Docker repository prefix"
+    required: true
+  image-name:
+    description: "Name of the Docker image"
+    required: true
+  extra-environment-vars:
+    description: "Extra environment variables for make commands"
+    required: false
+    default: ""
+  docker-username:
+    description: "Docker registry username"
+    required: true
+  docker-password:
+    description: "Docker registry password"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Log in to Docker registry
+      uses: docker/login-action@v3
+      with:
+        # yamllint disable-line rule:line-length
+        registry: ${{ inputs.docker-registry }}
+        username: ${{ inputs.docker-username }}
+        password: ${{ inputs.docker-password }}
+
+    - name: Get git tags on HEAD
+      id: git-tags
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        TAGS=$(git tag --points-at HEAD || true)
+        echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$TAGS" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+    - name: Build Docker image with branch tag
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        BRANCH_NAME="${GITHUB_REF_NAME}"
+        DOCKER_REGISTRY="${{ inputs.docker-registry }}"
+        DOCKER_REPOSITORY="${{ inputs.docker-repository }}"
+        IMAGE_NAME="${{ inputs.image-name }}"
+
+        echo "Building image with branch tag: ${BRANCH_NAME}"
+        ${{ inputs.extra-environment-vars }} \
+        DOCKER_TAG="${BRANCH_NAME}" \
+        DOCKER_REGISTRY="${DOCKER_REGISTRY}" \
+        DOCKER_REPOSITORY="${DOCKER_REPOSITORY}" \
+        IMAGE_NAME="${IMAGE_NAME}" \
+          make docker-build
+
+    - name: Build Docker images for git tags
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        DOCKER_REGISTRY="${{ inputs.docker-registry }}"
+        DOCKER_REPOSITORY="${{ inputs.docker-repository }}"
+        IMAGE_NAME="${{ inputs.image-name }}"
+
+        TAGS='${{ steps.git-tags.outputs.tags }}'
+        if [ -z "$TAGS" ]; then
+          echo "No git tags on HEAD, skipping tag builds"
+          exit 0
+        fi
+
+        while IFS= read -r tag; do
+          [ -z "$tag" ] && continue
+          # Strip leading 'v' from golang-style version tags
+          DOCKER_TAG="${tag#v}"
+          echo "Building image with tag: ${DOCKER_TAG}"
+          ${{ inputs.extra-environment-vars }} \
+          DOCKER_TAG="${DOCKER_TAG}" \
+          DOCKER_REGISTRY="${DOCKER_REGISTRY}" \
+          DOCKER_REPOSITORY="${DOCKER_REPOSITORY}" \
+          IMAGE_NAME="${IMAGE_NAME}" \
+            make docker-build
+        done <<< "$TAGS"
+
+    - name: Push Docker image with branch tag
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        BRANCH_NAME="${GITHUB_REF_NAME}"
+        DOCKER_REGISTRY="${{ inputs.docker-registry }}"
+        DOCKER_REPOSITORY="${{ inputs.docker-repository }}"
+        IMAGE_NAME="${{ inputs.image-name }}"
+
+        echo "Pushing image with branch tag: ${BRANCH_NAME}"
+        ${{ inputs.extra-environment-vars }} \
+        DOCKER_TAG="${BRANCH_NAME}" \
+        DOCKER_REGISTRY="${DOCKER_REGISTRY}" \
+        DOCKER_REPOSITORY="${DOCKER_REPOSITORY}" \
+        IMAGE_NAME="${IMAGE_NAME}" \
+          make docker-push
+
+    - name: Push Docker images for git tags
+      shell: bash
+      run: |
+        set -eu -o pipefail
+        DOCKER_REGISTRY="${{ inputs.docker-registry }}"
+        DOCKER_REPOSITORY="${{ inputs.docker-repository }}"
+        IMAGE_NAME="${{ inputs.image-name }}"
+
+        TAGS='${{ steps.git-tags.outputs.tags }}'
+        if [ -z "$TAGS" ]; then
+          echo "No git tags on HEAD, skipping tag pushes"
+          exit 0
+        fi
+
+        while IFS= read -r tag; do
+          [ -z "$tag" ] && continue
+          # Strip leading 'v' from golang-style version tags
+          DOCKER_TAG="${tag#v}"
+          echo "Pushing image with tag: ${DOCKER_TAG}"
+          ${{ inputs.extra-environment-vars }} \
+          DOCKER_TAG="${DOCKER_TAG}" \
+          DOCKER_REGISTRY="${DOCKER_REGISTRY}" \
+          DOCKER_REPOSITORY="${DOCKER_REPOSITORY}" \
+          IMAGE_NAME="${IMAGE_NAME}" \
+            make docker-push
+        done <<< "$TAGS"
+
+    - name: Log out of Docker registry
+      if: always()
+      shell: bash
+      run: docker logout "${{ inputs.docker-registry }}"

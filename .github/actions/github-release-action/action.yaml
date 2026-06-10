@@ -1,0 +1,80 @@
+---
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+name: "GitHub Release Action"
+description: "Creates GitHub releases with artifacts using the gh CLI tool"
+
+inputs:
+  release-targets:
+    description: "Make targets to build release artifacts"
+    required: false
+    default: "release"
+  artifact-glob:
+    description: "Glob pattern for release artifacts"
+    required: false
+    default: "release/*"
+  github-token:
+    description: "GitHub token for authentication"
+    required: true
+  draft:
+    description: "Create a draft release"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create GitHub Release
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        RELEASE_TARGETS: ${{ inputs.release-targets }}
+        ARTIFACT_GLOB: ${{ inputs.artifact-glob }}
+        DRAFT_INPUT: ${{ inputs.draft }}
+      run: |
+        set -eu -o pipefail
+
+        # Determine version from git tags on HEAD
+        VERSION=""
+        for tag in $(git tag --points-at HEAD); do
+          if echo "$tag" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+(-dev[0-9]+)?$'; then
+            VERSION="$tag"
+            break
+          fi
+        done
+
+        if [ -z "$VERSION" ]; then
+          echo "ERROR: No SemVer tag (vX.Y.Z, X.Y.Z, or vX.Y.Z-devN) found on HEAD"
+          exit 1
+        fi
+
+        echo "Version: $VERSION"
+
+        # Build release artifacts
+        make $RELEASE_TARGETS
+
+        # Generate SHA256 checksums for all artifacts
+        CHECKSUM_FILE="checksums-sha256.txt"
+        sha256sum $ARTIFACT_GLOB > "$CHECKSUM_FILE"
+        echo "Generated checksums:"
+        cat "$CHECKSUM_FILE"
+
+        # Determine if this should be a draft release
+        DRAFT_FLAG=""
+        if [[ "$VERSION" == *"-dev"* ]] || [[ "$DRAFT_INPUT" == "true" ]]; then
+          DRAFT_FLAG="--draft"
+          echo "Creating draft release"
+        fi
+
+        # Get release notes from latest commit message
+        RELEASE_NOTES="$(git log -1 --pretty=%B)"
+
+        # Create GitHub release
+        gh release create "$VERSION" \
+          $ARTIFACT_GLOB \
+          "$CHECKSUM_FILE" \
+          --title "$VERSION" \
+          --notes "$RELEASE_NOTES" \
+          --generate-notes \
+          $DRAFT_FLAG
