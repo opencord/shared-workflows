@@ -93,7 +93,7 @@ jobs:
         uses: opencord/shared-workflows/.github/actions/license-check-action@main
       - name: Run Maven
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/maven-build-action@5be56aed8bed4f0bf9d699f2817eaef37c94ac02 # v0.2.0
+        uses: lfreleng-actions/maven-build-action@3e8765bbc2685951fb7c2be03964304179106b70 # v0.2.1
         with:
           jdk-version: "11"
           mvn-version: "3.3.9"
