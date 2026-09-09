@@ -514,15 +514,20 @@ runs:
                     $(echo "$HELM_FLAGS") --wait --timeout 120m
             fi
 
+            # BBSim OLT ids start at 10: tests/data/bbsim-kind*.yaml expect serial
+            # BBSIM_OLT_10 for the first OLT, per VOL-3634 (kind-voltha multi-stack
+            # numbering). Deploying olt_id=0 yields BBSIM_OLT_0 and every
+            # "Validate OLT Device" keyword times out looking for a device that
+            # cannot exist. The release name stays bbsim${i}.
             for i in $(seq 0 $((OLTS - 1))); do
-                echo "Deploying bbsim${i}..."
+                echo "Deploying bbsim${i} (olt_id=$((10 + i)))..."
                 if [ "$LOCAL_CHARTS" = "true" ]; then
                     helm install "bbsim${i}" "$GITHUB_WORKSPACE/voltha-helm-charts/bbsim" \
-                        -n "$VOLTHA_NAMESPACE" --set olt_id="${i}" \
+                        -n "$VOLTHA_NAMESPACE" --set olt_id="$((10 + i))" \
                         $(echo "$BBSIM_FLAGS") --wait
                 else
                     helm install "bbsim${i}" onf/bbsim \
-                        -n "$VOLTHA_NAMESPACE" --set olt_id="${i}" \
+                        -n "$VOLTHA_NAMESPACE" --set olt_id="$((10 + i))" \
                         $(echo "$BBSIM_FLAGS") --wait
                 fi
             done
@@ -539,6 +544,11 @@ runs:
             # suite setup aborts with
             # "VOLTCTL and KUBECTL not configured. Please configure before executing tests."
             kubectl port-forward --address 0.0.0.0 -n "$VOLTHA_NAMESPACE" svc/voltha-voltha-api 55555:55555 &
+            # The robot suite reaches ONOS at localhost:30115 (ssh) and :30120 (REST).
+            # The kind cluster created above declares no extraPortMappings, so NodePort
+            # services are not published to the runner; forward them explicitly.
+            kubectl port-forward --address 0.0.0.0 -n "$INFRA_NAMESPACE" svc/voltha-infra-onos-classic-hs 30115:8101 &
+            kubectl port-forward --address 0.0.0.0 -n "$INFRA_NAMESPACE" svc/voltha-infra-onos-classic-hs 30120:8181 &
             kubectl port-forward --address 0.0.0.0 -n "$INFRA_NAMESPACE" svc/voltha-infra-kafka 9092:9092 &
             bbsim_dmi_port=50075
             for i in $(seq 0 $((OLTS - 1))); do
