@@ -78,8 +78,15 @@ runs:
     - name: Setup environment
       shell: bash
       run: |
-        echo "KUBECONFIG=$HOME/.kube/kind-${{ inputs.cluster-name }}" >> $GITHUB_ENV
-        echo "VOLTCONFIG=$HOME/.volt/config" >> $GITHUB_ENV
+        # $HOME is not always set for composite-action steps. When it is empty the
+        # paths below collapse to /.kube and /.volt, kubectl silently follows kind's
+        # own write to that path, and voltctl fails with
+        # "Unable to discover the user's home directory: $HOME is not defined".
+        HOME_DIR="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+        HOME_DIR="${HOME_DIR:-/root}"
+        echo "HOME=${HOME_DIR}" >> $GITHUB_ENV
+        echo "KUBECONFIG=${HOME_DIR}/.kube/kind-${{ inputs.cluster-name }}" >> $GITHUB_ENV
+        echo "VOLTCONFIG=${HOME_DIR}/.volt/config" >> $GITHUB_ENV
         echo "PATH=$PATH:$GITHUB_WORKSPACE/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $GITHUB_ENV
         echo "DIAGS_PROFILE=VOLTHA_PROFILE" >> $GITHUB_ENV
         echo "SSHPASS=karaf" >> $GITHUB_ENV
@@ -420,12 +427,17 @@ runs:
             fi
 
             HELM_FLAGS="--set global.log_level=${LOG_LEVEL^^}"
+            INFRA_HELM_FLAGS="--set global.log_level=${LOG_LEVEL^^}"
             BBSIM_FLAGS=""
             if [ "$VGC_ENABLED" != "true" ]; then
-                HELM_FLAGS="$HELM_FLAGS --set onos-classic.onosSshPort=30115"
-                HELM_FLAGS="$HELM_FLAGS --set onos-classic.onosApiPort=30120"
-                HELM_FLAGS="$HELM_FLAGS --set onos-classic.onosOfPort=31653"
-                HELM_FLAGS="$HELM_FLAGS --set onos-classic.individualOpenFlowNodePorts=true"
+                # onos-classic is a dependency of voltha-infra, NOT of voltha-stack,
+                # so these have to be applied to the infra release. Applied to the
+                # stack they are silently ignored, onos-classic/templates/nodeports.yaml
+                # never renders, and the robot tests find nothing on 30115/30120.
+                INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.onosSshPort=30115"
+                INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.onosApiPort=30120"
+                INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.onosOfPort=31653"
+                INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.individualOpenFlowNodePorts=true"
             fi
             if [ -n "$EXTRA_HELM_FLAGS" ]; then
                 HELM_FLAGS="$HELM_FLAGS $EXTRA_HELM_FLAGS"
@@ -481,7 +493,8 @@ runs:
                 helm dependency update "$GITHUB_WORKSPACE/voltha-helm-charts/voltha-infra" || true
                 helm dependency update "$GITHUB_WORKSPACE/voltha-helm-charts/voltha-stack" || true
                 helm install voltha-infra "$GITHUB_WORKSPACE/voltha-helm-charts/voltha-infra" \
-                    -n "$INFRA_NAMESPACE" --create-namespace --wait --timeout 120m
+                    -n "$INFRA_NAMESPACE" --create-namespace \
+                    $(echo "$INFRA_HELM_FLAGS") --wait --timeout 120m
                 helm install voltha "$GITHUB_WORKSPACE/voltha-helm-charts/voltha-stack" \
                     -n "$VOLTHA_NAMESPACE" --create-namespace \
                     --set global.stack_name=voltha \
@@ -491,7 +504,8 @@ runs:
             else
                 echo "Using charts from Helm repository"
                 helm install voltha-infra onf/voltha-infra \
-                    -n "$INFRA_NAMESPACE" --create-namespace --wait --timeout 120m
+                    -n "$INFRA_NAMESPACE" --create-namespace \
+                    $(echo "$INFRA_HELM_FLAGS") --wait --timeout 120m
                 helm install voltha onf/voltha-stack \
                     -n "$VOLTHA_NAMESPACE" --create-namespace \
                     --set global.stack_name=voltha \
@@ -520,6 +534,11 @@ runs:
             gzip -f "$ONOS_LOG" || true
 
             echo "Setting up port forwarding..."
+            # voltctl talks to the VOLTHA API on localhost:55555. Without this
+            # forward every voltctl call gets "connection refused" and the robot
+            # suite setup aborts with
+            # "VOLTCTL and KUBECTL not configured. Please configure before executing tests."
+            kubectl port-forward --address 0.0.0.0 -n "$VOLTHA_NAMESPACE" svc/voltha-voltha-api 55555:55555 &
             kubectl port-forward --address 0.0.0.0 -n "$INFRA_NAMESPACE" svc/voltha-infra-kafka 9092:9092 &
             bbsim_dmi_port=50075
             for i in $(seq 0 $((OLTS - 1))); do
@@ -533,6 +552,14 @@ runs:
                 kubectl port-forward --address 0.0.0.0 -n "$VOLTHA_NAMESPACE" svc/voltha-voltha-go-controller 8181:8181 &
             fi
             sleep 5
+
+            # Generate a voltctl config pointing at the forwarded API. Nothing else
+            # in the pipeline creates one, so voltctl would otherwise fall back to
+            # its built-in defaults.
+            mkdir -p "$(dirname "$VOLTCONFIG")"
+            voltctl -s localhost:55555 config > "$VOLTCONFIG"
+            echo "voltctl configured:"
+            grep -vE '^[[:space:]]*(#|$)' "$VOLTCONFIG" | head -8
         fi
 
         # Stage: Run Tests
