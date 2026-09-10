@@ -439,6 +439,24 @@ runs:
                 INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.onosOfPort=31653"
                 INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.individualOpenFlowNodePorts=true"
             fi
+
+            # The per-workflow values file carries the ONOS app list, netcfg and
+            # componentConfig, plus the bbsim-sadis-server servicesConfig, that
+            # the workflow's tests depend on. The Jenkins pipeline always passed
+            # -f examples/${WORKFLOW}-values.yaml to the voltha-infra install;
+            # without it ONOS comes up on chart defaults. For att that leaves
+            # org.opencord.olt.impl.OltMeterService deleteMeters=true, so the
+            # olt app garbage-collects every meter a few seconds after creating
+            # it (its reference count is never populated) and "Verify Meters in
+            # ONOS" fails; for dt/tt the wrong service definitions, app list and
+            # OltFlowService config are loaded.
+            WORKFLOW_VALUES="$GITHUB_WORKSPACE/voltha-helm-charts/examples/${WORKFLOW}-values.yaml"
+            if [ -f "$WORKFLOW_VALUES" ]; then
+                echo "Using workflow values file: $WORKFLOW_VALUES"
+                INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS -f $WORKFLOW_VALUES"
+            else
+                echo "::warning::No values file for workflow '$WORKFLOW' at $WORKFLOW_VALUES"
+            fi
             if [ -n "$EXTRA_HELM_FLAGS" ]; then
                 HELM_FLAGS="$HELM_FLAGS $EXTRA_HELM_FLAGS"
             fi
