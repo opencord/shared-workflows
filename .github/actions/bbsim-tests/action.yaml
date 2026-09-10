@@ -440,20 +440,32 @@ runs:
                 INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS --set onos-classic.individualOpenFlowNodePorts=true"
             fi
 
-            # The per-workflow values file carries the ONOS app list, netcfg and
-            # componentConfig, plus the bbsim-sadis-server servicesConfig, that
-            # the workflow's tests depend on. The Jenkins pipeline always passed
-            # -f examples/${WORKFLOW}-values.yaml to the voltha-infra install;
-            # without it ONOS comes up on chart defaults. For att that leaves
-            # org.opencord.olt.impl.OltMeterService deleteMeters=true, so the
-            # olt app garbage-collects every meter a few seconds after creating
-            # it (its reference count is never populated) and "Verify Meters in
-            # ONOS" fails; for dt/tt the wrong service definitions, app list and
-            # OltFlowService config are loaded.
+            # The per-workflow values file is what makes a workflow a workflow.
+            # The Jenkins pipeline always passed -f examples/${WORKFLOW}-values.yaml;
+            # it was dropped in the migration, so every chart came up on att
+            # defaults. Its keys are split across two charts, so it has to go to
+            # both installs:
+            #
+            #   onos-classic.*   -> voltha-infra: the ONOS app list, netcfg
+            #                       (sadis, kafka, dhcpl2relay, igmpproxy) and
+            #                       componentConfig. For att the only override is
+            #                       OltMeterService deleteMeters=false; without it
+            #                       the olt app garbage-collects every meter a few
+            #                       seconds after creating it (its reference count
+            #                       is never populated) and "Verify Meters in ONOS"
+            #                       fails.
+            #   servicesConfig,  -> bbsim: the service definitions BBSim serves to
+            #   bp_format           ONOS through bbsim-sadis-server. voltha-infra
+            #                       has no servicesConfig at all. Without this the
+            #                       dt and tt runs get att's single eapol+dhcp hsia
+            #                       service with c_tag/s_tag 900 instead of their
+            #                       own, so no subscriber flow ever matches what
+            #                       the test data expects.
             WORKFLOW_VALUES="$GITHUB_WORKSPACE/voltha-helm-charts/examples/${WORKFLOW}-values.yaml"
             if [ -f "$WORKFLOW_VALUES" ]; then
                 echo "Using workflow values file: $WORKFLOW_VALUES"
                 INFRA_HELM_FLAGS="$INFRA_HELM_FLAGS -f $WORKFLOW_VALUES"
+                BBSIM_FLAGS="$BBSIM_FLAGS -f $WORKFLOW_VALUES"
             else
                 echo "::warning::No values file for workflow '$WORKFLOW' at $WORKFLOW_VALUES"
             fi
