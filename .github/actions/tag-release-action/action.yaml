@@ -1,0 +1,176 @@
+---
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+name: Tag Release
+description: >-
+  Create and push a release git tag from the version in the VERSION file,
+  unless the version is a development (-dev) version
+
+inputs:
+  path:
+    description: "Path to the repository to tag"
+    required: false
+    default: "."
+  version-file:
+    description: "File (relative to path) containing the version"
+    required: false
+    default: "VERSION"
+  tag-prefix:
+    description: >-
+      Prefix for the git tag. "auto" uses "v" for Go projects (go.mod or
+      Gopkg.toml present) and no prefix otherwise, matching tag-check-action.
+    required: false
+    default: "auto"
+  git-user-name:
+    description: "Name recorded as the tagger of the annotated tag"
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: "Email recorded as the tagger of the annotated tag"
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+  dry-run:
+    description: "Compute outputs but do not create or push the tag"
+    required: false
+    default: "false"
+
+outputs:
+  version:
+    description: "Version read from the version file"
+    value: ${{ steps.tag.outputs.version }}
+  tag:
+    description: "Git tag name derived from the version (empty for -dev)"
+    value: ${{ steps.tag.outputs.tag }}
+  created:
+    description: "'true' if the tag was created and pushed by this run"
+    value: ${{ steps.tag.outputs.created }}
+  release:
+    description: >-
+      'true' if HEAD now carries the release tag (newly created or
+      pre-existing), i.e. release artifacts should be published
+    value: ${{ steps.tag.outputs.release }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Tag release version
+      id: tag
+      shell: bash
+      env:
+        REPO_PATH: ${{ inputs.path }}
+        VERSION_FILE: ${{ inputs.version-file }}
+        TAG_PREFIX: ${{ inputs.tag-prefix }}
+        GIT_USER_NAME: ${{ inputs.git-user-name }}
+        GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -eu -o pipefail
+
+        cd "$REPO_PATH"
+
+        # Defaults; later writes of the same key take precedence
+        {
+          echo "version="
+          echo "tag="
+          echo "created=false"
+          echo "release=false"
+        } >> "$GITHUB_OUTPUT"
+
+        if [ ! -f "$VERSION_FILE" ]; then
+          echo "::error::No '$VERSION_FILE' file found in '$REPO_PATH'"
+          exit 1
+        fi
+
+        # First non-blank line, surrounding whitespace removed
+        VERSION="$(awk 'NF {
+          gsub(/^[ \t\r]+|[ \t\r]+$/, ""); print; exit
+        }' "$VERSION_FILE")"
+
+        if [ -z "$VERSION" ]; then
+          echo "::error::'$VERSION_FILE' is empty"
+          exit 1
+        fi
+
+        echo "Found version '$VERSION' in '$VERSION_FILE'"
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+        # Development versions are never tagged or released
+        if [[ "${VERSION,,}" =~ -dev[0-9]*$ ]]; then
+          echo "'$VERSION' is a development version, skipping tag"
+          echo "::notice::Version '$VERSION' is a -dev version," \
+            "no release tag created"
+          exit 0
+        fi
+
+        case "$TAG_PREFIX" in
+          auto)
+            if [ -f "go.mod" ] || [ -f "Gopkg.toml" ]; then
+              echo "Go-based project found, using v-prefixed git tag"
+              TAG="v${VERSION}"
+            else
+              TAG="${VERSION}"
+            fi
+            ;;
+          *)
+            TAG="${TAG_PREFIX}${VERSION}"
+            ;;
+        esac
+
+        echo "Release tag: '$TAG'"
+        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+        HEAD_SHA="$(git rev-parse HEAD)"
+
+        # Peel annotated tags to the commit they point at
+        EXISTING_SHA="$(git ls-remote --tags origin \
+            "refs/tags/${TAG}^{}" "refs/tags/${TAG}" \
+          | awk '$2 ~ /\^\{\}$/ { peeled=$1 } $2 !~ /\^\{\}$/ { plain=$1 }
+                 END { if (peeled != "") print peeled; else print plain }')"
+
+        if [ -n "$EXISTING_SHA" ]; then
+          if [ "$EXISTING_SHA" = "$HEAD_SHA" ]; then
+            echo "Tag '$TAG' already exists and points at HEAD ($HEAD_SHA)"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Tag '$TAG' already exists at $EXISTING_SHA" \
+              "but HEAD is $HEAD_SHA; bump '$VERSION_FILE' to release." \
+              "Skipping."
+          fi
+          exit 0
+        fi
+
+        if [ "$DRY_RUN" = "true" ]; then
+          echo "Dry run: would create and push tag '$TAG' at $HEAD_SHA"
+          exit 0
+        fi
+
+        git config user.name "$GIT_USER_NAME"
+        git config user.email "$GIT_USER_EMAIL"
+
+        git tag -a "$TAG" -m "Release ${VERSION}"
+        git push origin "refs/tags/${TAG}"
+
+        echo "Pushed tag '$TAG' -> $HEAD_SHA"
+        echo "created=true" >> "$GITHUB_OUTPUT"
+        echo "release=true" >> "$GITHUB_OUTPUT"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        VERSION: ${{ steps.tag.outputs.version }}
+        TAG: ${{ steps.tag.outputs.tag }}
+        CREATED: ${{ steps.tag.outputs.created }}
+        RELEASE: ${{ steps.tag.outputs.release }}
+      run: |
+        {
+          echo "### Release tagging"
+          echo ""
+          echo "| Item | Value |"
+          echo "| --- | --- |"
+          echo "| Version | \`${VERSION:-unknown}\` |"
+          echo "| Tag | \`${TAG:-n/a}\` |"
+          echo "| Tag created | ${CREATED:-false} |"
+          echo "| Release | ${RELEASE:-false} |"
+        } >> "$GITHUB_STEP_SUMMARY"
