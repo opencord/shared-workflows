@@ -133,7 +133,7 @@ jobs:
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
       - name: Run Sanity Tests
-        uses: opencord/shared-workflows/.github/actions/bbsim-tests@main
+        uses: opencord/shared-workflows/.github/actions/bbsim-tests@sanity
         with:
           branch: ${{ inputs.BRANCH }}
           test-targets: ${{ inputs.TEST_TARGETS }}

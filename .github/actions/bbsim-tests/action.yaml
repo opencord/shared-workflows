@@ -193,7 +193,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: opencord/voltha-system-tests
-        ref: ${{ inputs.branch }}
+        ref: sanity
         path: voltha-system-tests
 
     - name: Checkout voltha-helm-charts
